@@ -21,7 +21,7 @@ PANEL_PORT=32451
 PANEL_USER="admin"
 PANEL_PASS="$(head -c 16 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 16)"
 INSTALL_DIR="/opt/wui"
-LICENSE_SERVER=""
+
 
 # 解析参数
 while [[ $# -gt 0 ]]; do
@@ -30,7 +30,6 @@ while [[ $# -gt 0 ]]; do
         --username) PANEL_USER="$2"; shift 2 ;;
         --password) PANEL_PASS="$2"; shift 2 ;;
         --install-dir) INSTALL_DIR="$2"; shift 2 ;;
-        --license-server) LICENSE_SERVER="$2"; shift 2 ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -39,7 +38,6 @@ while [[ $# -gt 0 ]]; do
             echo "  --username USER        Admin username (default: admin)"
             echo "  --password PASS        Admin password (default: random)"
             echo "  --install-dir DIR      Install directory (default: /opt/wui)"
-            echo "  --license-server URL   License server URL"
             echo "  --help                 Show this help"
             exit 0
             ;;
@@ -185,7 +183,6 @@ create_config() {
     "level": "info"
   },
   "license": {
-    "serverUrl": "${LICENSE_SERVER}",
     "gracePeriodDays": 7
   }
 }
@@ -217,6 +214,57 @@ SERVICE
     systemctl daemon-reload
     systemctl enable wui
     echo -e "${GREEN}Service OK${NC}"
+}
+
+setup_cli() {
+    echo -e "${YELLOW}Setting up CLI command...${NC}"
+    cat > /usr/local/bin/wui << 'CLI'
+#!/bin/bash
+case "$1" in
+    start)   systemctl start wui ;;
+    stop)    systemctl stop wui ;;
+    restart) systemctl restart wui ;;
+    status)  systemctl status wui --no-pager ;;
+    log|logs)
+        if [ "$2" = "-f" ] || [ "$2" = "--follow" ]; then
+            journalctl -u wui -f
+        else
+            journalctl -u wui -n 50 --no-pager
+        fi ;;
+    version)
+        /opt/wui/wui-server -v 2>/dev/null || echo "unknown" ;;
+    uninstall)
+        echo -e "\033[31mThis will remove WUI completely. Type 'yes' to confirm:\033[0m"
+        read -r confirm
+        if [ "$confirm" = "yes" ]; then
+            systemctl stop wui
+            systemctl disable wui
+            rm -f /etc/systemd/system/wui.service
+            rm -f /usr/local/bin/wui
+            rm -rf /opt/wui
+            systemctl daemon-reload
+            echo "WUI uninstalled."
+        else
+            echo "Cancelled."
+        fi ;;
+    *)
+        echo "WUI - Proxy Management Panel"
+        echo ""
+        echo "Usage: wui <command>"
+        echo ""
+        echo "Commands:"
+        echo "  start       Start WUI"
+        echo "  stop        Stop WUI"
+        echo "  restart     Restart WUI"
+        echo "  status      Show service status"
+        echo "  log [-f]    Show logs (add -f to follow)"
+        echo "  version     Show version"
+        echo "  uninstall   Uninstall WUI"
+        ;;
+esac
+CLI
+    chmod +x /usr/local/bin/wui
+    echo -e "${GREEN}CLI OK (wui start|stop|restart|status|log)${NC}"
 }
 
 setup_firewall() {
@@ -258,8 +306,7 @@ show_success() {
     echo ""
     echo -e "${YELLOW}  Dir:${NC}      ${INSTALL_DIR}"
     echo ""
-    echo "  systemctl start|stop|restart wui"
-    echo "  journalctl -u wui -f"
+    echo "  wui start|stop|restart|status|log"
     echo ""
     echo -e "${RED}  Save the password above!${NC}"
     echo ""
@@ -279,6 +326,7 @@ install_deps
 download_and_install
 create_config
 setup_service
+setup_cli
 setup_firewall
 start_service
 show_success
