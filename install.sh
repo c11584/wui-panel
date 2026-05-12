@@ -163,6 +163,16 @@ download_and_install() {
 }
 
 create_config() {
+    # 升级安装：保留已有配置，避免密码被覆盖
+    if [[ -f "$INSTALL_DIR/config.json" ]]; then
+        echo -e "${GREEN}Config OK (preserved existing)${NC}"
+        # 从已有配置读取端口和密码，用于后续显示
+        PANEL_PORT=$(python3 -c "import json; print(json.load(open('$INSTALL_DIR/config.json'))['panel']['port'])" 2>/dev/null || grep -o '"port":[[:space:]]*[0-9]*' "$INSTALL_DIR/config.json" | grep -o '[0-9]*$' || echo "$PANEL_PORT")
+        PANEL_USER=$(python3 -c "import json; print(json.load(open('$INSTALL_DIR/config.json'))['panel']['username'])" 2>/dev/null || grep -o '"username":[[:space:]]*"[^"]*"' "$INSTALL_DIR/config.json" | tail -1 | grep -o '"[^"]*"$' | tr -d '"' || echo "$PANEL_USER")
+        PANEL_PASS=$(python3 -c "import json; print(json.load(open('$INSTALL_DIR/config.json'))['panel']['password'])" 2>/dev/null || grep -o '"password":[[:space:]]*"[^"]*"' "$INSTALL_DIR/config.json" | tail -1 | grep -o '"[^"]*"$' | tr -d '"' || echo "$PANEL_PASS")
+        return
+    fi
+
     echo -e "${YELLOW}Creating config...${NC}"
     cat > "$INSTALL_DIR/config.json" << CONFIG
 {
