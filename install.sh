@@ -19,9 +19,20 @@ GITHUB_REPO="c11584/wui-panel"
 # 默认配置
 PANEL_PORT=32451
 PANEL_USER="admin"
-PANEL_PASS="$(head -c 16 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 16)"
+PANEL_PASS=""
 INSTALL_DIR="/opt/wui"
+NO_INTERACT=false
 
+# 生成随机密码（可靠方式）
+generate_password() {
+    # 优先用 openssl
+    if command -v openssl >/dev/null 2>&1; then
+        openssl rand -base64 16 | tr -dc 'A-Za-z0-9' | head -c 16
+    else
+        # fallback: /dev/urandom
+        cat /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 16
+    fi
+}
 
 # 解析参数
 while [[ $# -gt 0 ]]; do
@@ -30,6 +41,7 @@ while [[ $# -gt 0 ]]; do
         --username) PANEL_USER="$2"; shift 2 ;;
         --password) PANEL_PASS="$2"; shift 2 ;;
         --install-dir) INSTALL_DIR="$2"; shift 2 ;;
+        --no-interact) NO_INTERACT=true; shift ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -38,6 +50,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --username USER        Admin username (default: admin)"
             echo "  --password PASS        Admin password (default: random)"
             echo "  --install-dir DIR      Install directory (default: /opt/wui)"
+            echo "  --no-interact          Skip interactive prompts (use defaults)"
             echo "  --help                 Show this help"
             exit 0
             ;;
@@ -47,6 +60,50 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# 交互式输入（管道安装时跳过，除非显式传参）
+interactive_input() {
+    # 如果密码已通过参数传入，跳过交互
+    [[ -n "$PANEL_PASS" ]] && return
+
+    # 检测是否在交互终端（管道模式 stdin 不是终端）
+    if [[ -t 0 ]] && [[ "$NO_INTERACT" == "false" ]]; then
+        echo -e "${YELLOW}═══ Installation Settings ═══${NC}"
+        echo -e "  Press Enter to use defaults, or type your custom value."
+        echo ""
+
+        # 端口
+        echo -ne "${BLUE}  Port [${PANEL_PORT}]:${NC} "
+        local input_port
+        read -r input_port
+        [[ -n "$input_port" ]] && PANEL_PORT="$input_port"
+
+        # 用户名
+        echo -ne "${BLUE}  Username [${PANEL_USER}]:${NC} "
+        local input_user
+        read -r input_user
+        [[ -n "$input_user" ]] && PANEL_USER="$input_user"
+
+        # 密码（留空自动生成）
+        local default_pass
+        default_pass=$(generate_password)
+        echo -ne "${BLUE}  Password [${default_pass}]:${NC} "
+        local input_pass
+        read -r input_pass
+        if [[ -n "$input_pass" ]]; then
+            PANEL_PASS="$input_pass"
+        else
+            PANEL_PASS="$default_pass"
+        fi
+
+        echo ""
+    fi
+
+    # 非交互模式或管道模式：自动生成密码
+    if [[ -z "$PANEL_PASS" ]]; then
+        PANEL_PASS=$(generate_password)
+    fi
+}
 
 # ============================================================
 # 函数
@@ -311,7 +368,7 @@ show_success() {
     echo ""
     echo -e "${BLUE}  URL:${NC}      http://${SERVER_IP}:${PANEL_PORT}"
     echo -e "${BLUE}  User:${NC}     ${PANEL_USER}"
-    echo -e "${BLUE}  Pass:${NC}     ${PANEL_PASS}"
+    echo -e "${BLUE}  Pass:${NC}     ${PANEL_PASS:-(see config.json)}"
     echo ""
     echo -e "${YELLOW}  Dir:${NC}      ${INSTALL_DIR}"
     echo ""
@@ -326,10 +383,10 @@ show_success() {
 # ============================================================
 
 print_banner
+check_root
+interactive_input
 echo -e "${YELLOW}Config:${NC}  port=${PANEL_PORT}  dir=${INSTALL_DIR}  user=${PANEL_USER}"
 echo ""
-
-check_root
 detect_os
 install_deps
 download_and_install
