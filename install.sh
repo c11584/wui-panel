@@ -2,7 +2,7 @@
 
 # WUI - One-Click Installation Script
 # Usage: curl -fsSL https://raw.githubusercontent.com/c11584/wui-panel/main/install.sh | bash
-#        or: curl -fsSL https://raw.githubusercontent.com/c11584/wui-panel/main/install.sh | bash -s -- --port 8080
+#        or: bash install.sh [--port PORT] [--username USER] [--password PASS] [--install-dir DIR]
 
 set -e
 
@@ -13,7 +13,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# GitHub Release 仓库
+# GitHub Release
 GITHUB_REPO="c11584/wui-panel"
 
 # 默认配置
@@ -81,15 +81,13 @@ detect_os() {
     if [[ -f /etc/os-release ]]; then
         . /etc/os-release
         OS=$ID
-        VER=$VERSION_ID
     elif type lsb_release >/dev/null 2>&1; then
         OS=$(lsb_release -si | tr '[:upper:]' '[:lower:]')
-        VER=$(lsb_release -sr)
     else
         echo -e "${RED}Cannot detect OS${NC}"
         exit 1
     fi
-    echo -e "${GREEN}Detected OS: $OS $VER${NC}"
+    echo -e "${GREEN}OS: $OS${NC}"
 }
 
 install_deps() {
@@ -101,121 +99,73 @@ install_deps() {
         arch|manjaro) pacman -Sy --noconfirm curl wget unzip ;;
         *) echo -e "${RED}Unsupported OS: $OS${NC}"; exit 1 ;;
     esac
-    echo -e "${GREEN}Dependencies installed${NC}"
+    echo -e "${GREEN}Dependencies OK${NC}"
 }
 
-# 获取最新版本号
 get_latest_version() {
     local version
-    version=$(curl -s "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+    version=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
     if [[ -z "$version" ]]; then
-        echo -e "${RED}Failed to get latest version from GitHub${NC}"
+        echo -e "${RED}Failed to get latest version${NC}"
         exit 1
     fi
     echo "$version"
 }
 
-# 下载并安装 WUI 面板
-install_wui() {
+download_and_install() {
     echo -e "${YELLOW}Installing WUI panel...${NC}"
 
-    # 检测架构
-    ARCH=$(uname -m)
-    case $ARCH in
+    # 架构
+    case $(uname -m) in
         x86_64) WUI_ARCH="amd64" ;;
         aarch64|arm64) WUI_ARCH="arm64" ;;
-        *) echo -e "${RED}Unsupported architecture: $ARCH${NC}"; exit 1 ;;
+        *) echo -e "${RED}Unsupported arch: $(uname -m)${NC}"; exit 1 ;;
     esac
 
-    # 获取版本
+    # 版本
     WUI_VERSION=$(get_latest_version)
-    echo -e "${GREEN}Latest version: v${WUI_VERSION}${NC}"
+    echo -e "${GREEN}Version: v${WUI_VERSION} (${WUI_ARCH})${NC}"
 
     # 下载
     PACKAGE_NAME="wui-${WUI_VERSION}-linux-${WUI_ARCH}"
     DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/v${WUI_VERSION}/${PACKAGE_NAME}.tar.gz"
     TMP_DIR="/tmp/wui-install-$$"
-
     mkdir -p "$TMP_DIR"
-    echo -e "${YELLOW}Downloading ${PACKAGE_NAME}.tar.gz...${NC}"
 
-    if ! wget -O "$TMP_DIR/wui.tar.gz" "$DOWNLOAD_URL" 2>&1; then
-        echo -e "${RED}Download failed from: ${DOWNLOAD_URL}${NC}"
-        echo -e "${YELLOW}Trying GitHub proxy...${NC}"
-        # 尝试常见代理
-        PROXY_URL="https://ghfast.top/${DOWNLOAD_URL}"
-        if ! wget -O "$TMP_DIR/wui.tar.gz" "$PROXY_URL" 2>&1; then
-            echo -e "${RED}All download attempts failed${NC}"
-            rm -rf "$TMP_DIR"
-            exit 1
-        fi
+    echo -e "${YELLOW}Downloading ${PACKAGE_NAME}.tar.gz ...${NC}"
+    if ! wget -q -O "$TMP_DIR/${PACKAGE_NAME}.tar.gz" "$DOWNLOAD_URL" 2>&1; then
+        echo -e "${RED}Download failed${NC}"
+        rm -rf "$TMP_DIR"
+        exit 1
     fi
+    echo -e "${GREEN}Download OK ($(du -h "$TMP_DIR/${PACKAGE_NAME}.tar.gz" | cut -f1))${NC}"
 
-    # 校验 sha256 (如果有的话)
+    # 校验
     SHA256_URL="https://github.com/${GITHUB_REPO}/releases/download/v${WUI_VERSION}/${PACKAGE_NAME}.tar.gz.sha256"
-    if wget -O "$TMP_DIR/wui.tar.gz.sha256" "$SHA256_URL" 2>/dev/null; then
+    if wget -q -O "$TMP_DIR/${PACKAGE_NAME}.tar.gz.sha256" "$SHA256_URL" 2>/dev/null; then
         echo -e "${YELLOW}Verifying checksum...${NC}"
-        cd "$TMP_DIR"
-        sha256sum -c wui.tar.gz.sha256 || {
-            echo -e "${RED}Checksum verification failed!${NC}"
-            rm -rf "$TMP_DIR"
-            exit 1
-        }
-        cd - > /dev/null
+        (cd "$TMP_DIR" && sha256sum -c "${PACKAGE_NAME}.tar.gz.sha256")
         echo -e "${GREEN}Checksum OK${NC}"
     fi
 
     # 解压
-    tar -xzf "$TMP_DIR/wui.tar.gz" -C "$TMP_DIR"
-    EXTRACTED_DIR=$(find "$TMP_DIR" -maxdepth 1 -type d -name "wui-*" | head -1)
+    echo -e "${YELLOW}Extracting...${NC}"
+    tar -xzf "$TMP_DIR/${PACKAGE_NAME}.tar.gz" -C "$TMP_DIR"
 
     # 安装
     mkdir -p "$INSTALL_DIR"
-    cp -r "$EXTRACTED_DIR"/* "$INSTALL_DIR/"
-    chmod +x "$INSTALL_DIR/wui-server"
+    cp -r "$TMP_DIR/${PACKAGE_NAME}"/* "$INSTALL_DIR/"
+    chmod +x "$INSTALL_DIR/wui-server" 2>/dev/null || true
     chmod +x "$INSTALL_DIR/bin/xray" 2>/dev/null || true
     mkdir -p "$INSTALL_DIR"/{data,logs,configs}
 
+    # 清理
     rm -rf "$TMP_DIR"
-    echo -e "${GREEN}WUI panel installed to ${INSTALL_DIR}${NC}"
+    echo -e "${GREEN}Installed to ${INSTALL_DIR}${NC}"
 }
 
-# 如果包里没带 Xray，单独下载
-download_xray() {
-    if [[ -f "$INSTALL_DIR/bin/xray" ]]; then
-        echo -e "${GREEN}Xray already included in package${NC}"
-        return
-    fi
-
-    echo -e "${YELLOW}Downloading Xray core...${NC}"
-    XRAY_VERSION=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
-    [[ -z "$XRAY_VERSION" ]] && XRAY_VERSION="25.3.6"
-
-    case $(uname -m) in
-        x86_64) XRAY_ARCH="64" ;;
-        aarch64|arm64) XRAY_ARCH="arm64-v8a" ;;
-        *) echo -e "${YELLOW}Skipping Xray download${NC}"; return ;;
-    esac
-
-    XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-linux-${XRAY_ARCH}.zip"
-    TMP_XRAY="/tmp/xray-$$"
-    mkdir -p "$TMP_XRAY" "$INSTALL_DIR/bin"
-
-    if wget -O "$TMP_XRAY/xray.zip" "$XRAY_URL" 2>/dev/null; then
-        unzip -o "$TMP_XRAY/xray.zip" -d "$TMP_XRAY"
-        mv "$TMP_XRAY/xray" "$INSTALL_DIR/bin/xray"
-        chmod +x "$INSTALL_DIR/bin/xray"
-        echo -e "${GREEN}Xray v${XRAY_VERSION} installed${NC}"
-    else
-        echo -e "${YELLOW}Xray download failed, install manually${NC}"
-    fi
-    rm -rf "$TMP_XRAY"
-}
-
-# 生成配置文件
 create_config() {
-    echo -e "${YELLOW}Creating configuration...${NC}"
-
+    echo -e "${YELLOW}Creating config...${NC}"
     cat > "$INSTALL_DIR/config.json" << CONFIG
 {
   "panel": {
@@ -240,17 +190,14 @@ create_config() {
   }
 }
 CONFIG
-
-    echo -e "${GREEN}Configuration created${NC}"
+    echo -e "${GREEN}Config OK${NC}"
 }
 
-# systemd 服务
 setup_service() {
     echo -e "${YELLOW}Setting up systemd service...${NC}"
-
     cat > /etc/systemd/system/wui.service << SERVICE
 [Unit]
-Description=WUI - Next-Generation Proxy Management Panel
+Description=WUI - Proxy Management Panel
 After=network.target
 Wants=network.target
 
@@ -269,10 +216,9 @@ SERVICE
 
     systemctl daemon-reload
     systemctl enable wui
-    echo -e "${GREEN}Systemd service configured${NC}"
+    echo -e "${GREEN}Service OK${NC}"
 }
 
-# 防火墙
 setup_firewall() {
     if command -v ufw >/dev/null 2>&1; then
         ufw allow "$PANEL_PORT"/tcp comment "WUI Panel" 2>/dev/null
@@ -281,48 +227,41 @@ setup_firewall() {
         firewall-cmd --permanent --add-port="$PANEL_PORT"/tcp 2>/dev/null
         firewall-cmd --reload 2>/dev/null
         echo -e "${GREEN}Firewalld: port ${PANEL_PORT} opened${NC}"
-    else
-        echo -e "${YELLOW}No firewall detected, skipping${NC}"
     fi
 }
 
-# 启动
 start_service() {
-    echo -e "${YELLOW}Starting WUI service...${NC}"
+    echo -e "${YELLOW}Starting WUI...${NC}"
     systemctl start wui
-    sleep 2
+    sleep 3
 
     if systemctl is-active --quiet wui; then
-        echo -e "${GREEN}WUI service started${NC}"
+        echo -e "${GREEN}WUI started${NC}"
     else
-        echo -e "${RED}Failed to start WUI service${NC}"
-        journalctl -u wui -n 20 --no-pager
+        echo -e "${RED}Failed to start:${NC}"
+        journalctl -u wui -n 30 --no-pager
         exit 1
     fi
 }
 
 show_success() {
-    SERVER_IP=$(curl -s --connect-timeout 3 ifconfig.me || echo "YOUR_SERVER_IP")
+    SERVER_IP=$(curl -s --connect-timeout 3 ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
 
     echo ""
     echo -e "${GREEN}=======================================${NC}"
-    echo -e "${GREEN}WUI Installation Complete!${NC}"
+    echo -e "${GREEN}  WUI Installation Complete!${NC}"
     echo -e "${GREEN}=======================================${NC}"
     echo ""
-    echo -e "${BLUE}Panel URL:${NC} http://${SERVER_IP}:${PANEL_PORT}"
-    echo -e "${BLUE}Username:${NC}  ${PANEL_USER}"
-    echo -e "${BLUE}Password:${NC}  ${PANEL_PASS}"
+    echo -e "${BLUE}  URL:${NC}      http://${SERVER_IP}:${PANEL_PORT}"
+    echo -e "${BLUE}  User:${NC}     ${PANEL_USER}"
+    echo -e "${BLUE}  Pass:${NC}     ${PANEL_PASS}"
     echo ""
-    echo -e "${YELLOW}Install Dir:${NC} ${INSTALL_DIR}"
+    echo -e "${YELLOW}  Dir:${NC}      ${INSTALL_DIR}"
     echo ""
-    echo -e "${YELLOW}Commands:${NC}"
-    echo "  Start:   systemctl start wui"
-    echo "  Stop:    systemctl stop wui"
-    echo "  Restart: systemctl restart wui"
-    echo "  Status:  systemctl status wui"
-    echo "  Logs:    journalctl -u wui -f"
+    echo "  systemctl start|stop|restart wui"
+    echo "  journalctl -u wui -f"
     echo ""
-    echo -e "${RED}IMPORTANT: Save the password above!${NC}"
+    echo -e "${RED}  Save the password above!${NC}"
     echo ""
 }
 
@@ -330,30 +269,16 @@ show_success() {
 # 主流程
 # ============================================================
 
-main() {
-    print_banner
+print_banner
+echo -e "${YELLOW}Config:${NC}  port=${PANEL_PORT}  dir=${INSTALL_DIR}  user=${PANEL_USER}"
+echo ""
 
-    echo -e "${YELLOW}Configuration:${NC}"
-    echo "  Port:           ${PANEL_PORT}"
-    echo "  Username:       ${PANEL_USER}"
-    echo "  Install Dir:    ${INSTALL_DIR}"
-    echo "  License Server: ${LICENSE_SERVER:-not set}"
-    echo ""
-
-    read -p "Continue? (y/n): " -n 1 -r
-    echo ""
-    [[ ! $REPLY =~ ^[Yy]$ ]] && echo "Cancelled" && exit 1
-
-    check_root
-    detect_os
-    install_deps
-    install_wui
-    download_xray
-    create_config
-    setup_service
-    setup_firewall
-    start_service
-    show_success
-}
-
-main
+check_root
+detect_os
+install_deps
+download_and_install
+create_config
+setup_service
+setup_firewall
+start_service
+show_success
