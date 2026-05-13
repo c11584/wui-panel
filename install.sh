@@ -17,7 +17,12 @@ PANEL_PORT=32451
 PANEL_USER="admin"
 PANEL_PASS="$(openssl rand -base64 16 | tr -dc 'A-Za-z0-9' | head -c 16 2>/dev/null || head -c 16 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 16)"
 INSTALL_DIR="/opt/wui"
-WUI_VERSION="$(cat "$(dirname "$0")/../VERSION" 2>/dev/null | tr -d '[:space:]' || echo "1.0.0")"
+WUI_VERSION="$(cat "$(dirname "$0")/../VERSION" 2>/dev/null | tr -d '[:space:]')"
+# pipe 模式下没有本地 VERSION 文件，从 GitHub API 获取最新版本
+if [[ -z "$WUI_VERSION" ]]; then
+    WUI_VERSION="$(curl -sL https://api.github.com/repos/c11584/wui-panel/releases/latest 2>/dev/null | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')"
+fi
+[[ -z "$WUI_VERSION" ]] && WUI_VERSION="1.0.0"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -153,7 +158,7 @@ install_wui() {
     mkdir -p $TMP_DIR
     
     # Try to download, fallback to local for testing
-    if ! wget -O $TMP_DIR/wui.tar.gz $WUI_URL 2>/dev/null; then
+    if ! wget --timeout=30 --tries=3 -O $TMP_DIR/wui.tar.gz $WUI_URL 2>/dev/null; then
         echo -e "${YELLOW}Pre-built package not found, checking for local files...${NC}"
         if [[ -f "./wui-linux-${WUI_ARCH}-${WUI_VERSION}.tar.gz" ]]; then
             cp ./wui-linux-${WUI_ARCH}-${WUI_VERSION}.tar.gz $TMP_DIR/wui.tar.gz
