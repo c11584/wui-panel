@@ -183,8 +183,14 @@ install_wui() {
     # Extract package
     tar -xzf $TMP_DIR/wui.tar.gz -C $TMP_DIR
     
-    # Find extracted directory
-    EXTRACTED_DIR=$(find $TMP_DIR -maxdepth 1 -type d -name "wui-*" | head -1)
+    # Find extracted directory (top-level dir from tar)
+    EXTRACTED_DIR=$(tar -tzf $TMP_DIR/wui.tar.gz | head -1 | cut -d'/' -f1)
+    EXTRACTED_DIR="$TMP_DIR/$EXTRACTED_DIR"
+    
+    if [[ ! -d "$EXTRACTED_DIR" ]]; then
+        echo -e "${RED}Failed to extract package${NC}"
+        exit 1
+    fi
     
     # Install
     mkdir -p $INSTALL_DIR
