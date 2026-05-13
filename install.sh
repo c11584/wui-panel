@@ -317,7 +317,7 @@ Wants=network.target
 Type=simple
 User=root
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/wui
+ExecStart=$INSTALL_DIR/wui-server
 Restart=on-failure
 RestartSec=5s
 LimitNOFILE=65536
@@ -351,7 +351,7 @@ case "$1" in
             journalctl -u wui -n 50 --no-pager
         fi ;;
     version)
-        /opt/wui/wui -v 2>/dev/null || echo "unknown" ;;
+        /opt/wui/wui-server -v 2>/dev/null || echo "unknown" ;;
     uninstall)
         echo -e "\033[31mThis will remove WUI completely. Type 'yes' to confirm:\033[0m"
         read -r confirm
@@ -425,7 +425,7 @@ init_admin_license() {
     echo -e "${YELLOW}Initializing admin license...${NC}"
     
     cd $INSTALL_DIR
-    ./wui --init-admin-license 2>&1 | tee /tmp/wui-admin-license.txt
+    ./wui-server --init-admin-license 2>&1 | tee /tmp/wui-admin-license.txt
     
     if [[ $? -eq 0 ]]; then
         echo -e "${GREEN}Admin license initialized${NC}"
