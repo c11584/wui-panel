@@ -470,8 +470,8 @@ main() {
     echo "  Install Dir:  $INSTALL_DIR"
     echo ""
     
-    # 交互终端才确认，pipe/curl 模式自动继续
-    if [[ -t 0 ]]; then
+    # pipe/curl 模式（stdin 不是终端）跳过确认
+    if tty -s 2>/dev/null; then
         read -p "Continue with installation? (y/n): " -n 1 -r
         echo ""
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -479,7 +479,7 @@ main() {
             exit 1
         fi
     else
-        echo -e "${GREEN}Non-interactive mode, proceeding...${NC}"
+        echo "Non-interactive mode, proceeding..."
     fi
    
     check_root
