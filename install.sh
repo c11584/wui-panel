@@ -192,7 +192,8 @@ install_wui() {
         exit 1
     fi
     
-    # Install
+    # Install — stop service first to avoid "text file busy"
+    systemctl stop wui 2>/dev/null || true
     mkdir -p $INSTALL_DIR
     cp -r $EXTRACTED_DIR/* $INSTALL_DIR/
     chmod +x $INSTALL_DIR/wui-server
@@ -351,6 +352,9 @@ setup_cli() {
     
     cat > /usr/local/bin/wui << 'CLI'
 #!/bin/bash
+WUI_DIR="/opt/wui"
+WUI_REPO="c11584/wui-panel"
+
 case "$1" in
     start)   systemctl start wui ;;
     stop)    systemctl stop wui ;;
@@ -363,18 +367,93 @@ case "$1" in
             journalctl -u wui -n 50 --no-pager
         fi ;;
     version)
-        /opt/wui/wui-server -v 2>/dev/null || echo "unknown" ;;
+        /opt/wui/wui-server -version 2>/dev/null || echo "unknown" ;;
+    update)
+        echo "Checking for updates..."
+        CURRENT=$(/opt/wui/wui-server -version 2>/dev/null || echo "unknown")
+        LATEST=$(curl -sL "https://api.github.com/repos/${WUI_REPO}/releases/latest" 2>/dev/null | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
+        if [ -z "$LATEST" ]; then
+            echo "Failed to fetch latest version info."
+            exit 1
+        fi
+        echo "Current: v${CURRENT}  Latest: v${LATEST}"
+        if [ "$CURRENT" = "$LATEST" ]; then
+            echo "Already up to date."
+            exit 0
+        fi
+        # Detect arch
+        ARCH=$(uname -m)
+        case "$ARCH" in
+            x86_64|amd64) ARCH="amd64" ;;
+            aarch64|arm64) ARCH="arm64" ;;
+            *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+        esac
+        TGZ="wui-${LATEST}-linux-${ARCH}.tar.gz"
+        URL="https://github.com/${WUI_REPO}/releases/download/v${LATEST}/${TGZ}"
+        TMPDIR=$(mktemp -d)
+        echo "Downloading v${LATEST}..."
+        if ! curl -fSL -o "${TMPDIR}/${TGZ}" "$URL"; then
+            echo "Download failed!"
+            rm -rf "$TMPDIR"
+            exit 1
+        fi
+        echo "Stopping WUI service..."
+        systemctl stop wui
+        echo "Extracting..."
+        tar -xzf "${TMPDIR}/${TGZ}" -C "${TMPDIR}"
+        # Find extracted dir (wui-VERSION-linux-ARCH/)
+        EXTRACTED=$(find "${TMPDIR}" -maxdepth 1 -type d -name "wui-*" | head -1)
+        if [ -z "$EXTRACTED" ]; then
+            echo "Extraction failed!"
+            systemctl start wui
+            rm -rf "$TMPDIR"
+            exit 1
+        fi
+        # Backup current binary
+        cp "${WUI_DIR}/wui-server" "${WUI_DIR}/wui-server.bak" 2>/dev/null || true
+        # Replace files
+        cp -f "${EXTRACTED}/wui-server" "${WUI_DIR}/wui-server"
+        chmod +x "${WUI_DIR}/wui-server"
+        # Update xray if included
+        if [ -f "${EXTRACTED}/bin/xray" ]; then
+            cp -f "${EXTRACTED}/bin/xray" "${WUI_DIR}/bin/xray"
+            chmod +x "${WUI_DIR}/bin/xray"
+        fi
+        # Update geo data
+        for f in geoip.dat geosite.dat; do
+            if [ -f "${EXTRACTED}/$f" ]; then
+                cp -f "${EXTRACTED}/$f" "${WUI_DIR}/$f"
+            fi
+        done
+        rm -rf "$TMPDIR"
+        echo "Starting WUI service..."
+        systemctl start wui
+        NEW_VER=$(/opt/wui/wui-server -version 2>/dev/null || echo "unknown")
+        echo "Update complete! v${CURRENT} -> v${NEW_VER}"
+        ;;
     uninstall)
         echo -e "\033[31mThis will remove WUI completely. Type 'yes' to confirm:\033[0m"
         read -r confirm
         if [ "$confirm" = "yes" ]; then
-            systemctl stop wui
-            systemctl disable wui
+            echo "Stopping WUI service..."
+            systemctl stop wui || true
+            systemctl disable wui || true
+            echo "Removing systemd service..."
             rm -f /etc/systemd/system/wui.service
-            rm -f /usr/local/bin/wui
-            rm -rf /opt/wui
             systemctl daemon-reload
-            echo "WUI uninstalled."
+            # Remove firewall rules — read port from config if available
+            PORT=$(python3 -c "import json; print(json.load(open('${WUI_DIR}/config.json')).get('panel',{}).get('port',32451))" 2>/dev/null || echo "32451")
+            if command -v ufw >/dev/null 2>&1; then
+                ufw delete allow ${PORT}/tcp 2>/dev/null || true
+            elif command -v firewall-cmd >/dev/null 2>&1; then
+                firewall-cmd --permanent --remove-port=${PORT}/tcp 2>/dev/null || true
+                firewall-cmd --reload 2>/dev/null || true
+            fi
+            echo "Removing installation directory..."
+            rm -rf "${WUI_DIR}"
+            rm -f /usr/local/bin/wui
+            rm -f /tmp/wui-admin-license.txt
+            echo -e "\033[32mWUI has been uninstalled.\033[0m"
         else
             echo "Cancelled."
         fi ;;
@@ -390,6 +469,7 @@ case "$1" in
         echo "  status      Show service status"
         echo "  log [-f]    Show logs (add -f to follow)"
         echo "  version     Show version"
+        echo "  update      Update to latest version"
         echo "  uninstall   Uninstall WUI"
         ;;
 esac
@@ -475,6 +555,7 @@ show_success() {
     echo "  wui status      Show service status"
     echo "  wui log [-f]    Show logs (add -f to follow)"
     echo "  wui version     Show version"
+    echo "  wui update      Update to latest version"
     echo "  wui uninstall   Uninstall WUI"
     echo ""
     echo -e "${RED}IMPORTANT: A random password has been generated. Please save it now!${NC}"
