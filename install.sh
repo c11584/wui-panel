@@ -196,6 +196,8 @@ install_wui() {
     mkdir -p $INSTALL_DIR
     cp -r $EXTRACTED_DIR/* $INSTALL_DIR/
     chmod +x $INSTALL_DIR/wui-server
+    # 不使用 tarball 里的默认 config.json，让 create_config() 生成新的
+    rm -f $INSTALL_DIR/config.json
     chmod +x $INSTALL_DIR/bin/xray 2>/dev/null || true
     
     # Create necessary directories
