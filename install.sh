@@ -273,6 +273,24 @@ create_config() {
         PANEL_PORT=$(grep -o '"port":[[:space:]]*[0-9]*' "$INSTALL_DIR/config.json" | grep -o '[0-9]*$' || echo "$PANEL_PORT")
         PANEL_USER=$(grep -o '"username":[[:space:]]*"[^"]*"' "$INSTALL_DIR/config.json" | grep -o '"[^"]*"$' | tr -d '"' || echo "$PANEL_USER")
         PANEL_PASS=$(grep -o '"password":[[:space:]]*"[^"]*"' "$INSTALL_DIR/config.json" | grep -o '"[^"]*"$' | tr -d '"' || echo "$PANEL_PASS")
+        # 补写 machineId（旧版本升级时可能没有这个字段）
+        if ! grep -q '"machineId"' "$INSTALL_DIR/config.json"; then
+            local NEW_MID=""
+            if [[ -f /etc/machine-id ]]; then
+                NEW_MID=$(sha256sum /etc/machine-id | cut -d' ' -f1 | cut -c1-16)
+            fi
+            if [[ -z "$NEW_MID" ]]; then
+                NEW_MID=$(openssl rand -hex 8 2>/dev/null || head -c 8 /dev/urandom | xxd -p)
+            fi
+            # 在 panel 块中插入 machineId（在 port 行后面加）
+            sed -i "s/\"port\":[[:space:]]*[0-9]*/&,\n    \"machineId\": \"$NEW_MID\"/" "$INSTALL_DIR/config.json" 2>/dev/null || \
+            python3 -c "
+import json
+with open('$INSTALL_DIR/config.json') as f: c=json.load(f)
+if 'machineId' not in c.get('panel',{}): c.setdefault('panel',{})['machineId']='$NEW_MID'; open('$INSTALL_DIR/config.json','w').write(json.dumps(c,indent=2))
+" 2>/dev/null
+            echo -e "${GREEN}Added machineId to existing config${NC}"
+        fi
         return
     fi
 
