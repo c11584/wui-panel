@@ -277,12 +277,22 @@ create_config() {
 
     echo -e "${YELLOW}Creating configuration...${NC}"
     
+    # 生成机器唯一ID（基于 /etc/machine-id，重装软件不变）
+    MACHINE_ID=""
+    if [[ -f /etc/machine-id ]]; then
+        MACHINE_ID=$(sha256sum /etc/machine-id | cut -d' ' -f1 | cut -c1-16)
+    fi
+    if [[ -z "$MACHINE_ID" ]]; then
+        MACHINE_ID=$(openssl rand -hex 8 2>/dev/null || head -c 8 /dev/urandom | xxd -p)
+    fi
+    
     cat > $INSTALL_DIR/config.json << CONFIG
 {
   "panel": {
     "port": $PANEL_PORT,
     "username": "$PANEL_USER",
-    "password": "$PANEL_PASS"
+    "password": "$PANEL_PASS",
+    "machineId": "$MACHINE_ID"
   },
   "xray": {
     "binPath": "$INSTALL_DIR/bin/xray",
