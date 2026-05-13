@@ -15,7 +15,7 @@ NC='[0m' # No Color
 # Default configuration
 PANEL_PORT=32451
 PANEL_USER="admin"
-PANEL_PASS="$(head -c 16 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 16)"
+PANEL_PASS="$(openssl rand -base64 16 | tr -dc 'A-Za-z0-9' | head -c 16 2>/dev/null || head -c 16 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 16)"
 INSTALL_DIR="/opt/wui"
 WUI_VERSION="$(cat "$(dirname "$0")/../VERSION" 2>/dev/null | tr -d '[:space:]' || echo "1.0.0")"
 
@@ -470,13 +470,18 @@ main() {
     echo "  Install Dir:  $INSTALL_DIR"
     echo ""
     
-    read -p "Continue with installation? (y/n): " -n 1 -r
-    echo ""
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Installation cancelled"
-        exit 1
+    # 交互终端才确认，pipe/curl 模式自动继续
+    if [[ -t 0 ]]; then
+        read -p "Continue with installation? (y/n): " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "Installation cancelled"
+            exit 1
+        fi
+    else
+        echo -e "${GREEN}Non-interactive mode, proceeding...${NC}"
     fi
-    
+   
     check_root
     detect_os
     install_dependencies
