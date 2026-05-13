@@ -189,7 +189,7 @@ install_wui() {
     # Install
     mkdir -p $INSTALL_DIR
     cp -r $EXTRACTED_DIR/* $INSTALL_DIR/
-    chmod +x $INSTALL_DIR/wui
+    chmod +x $INSTALL_DIR/wui-server
     chmod +x $INSTALL_DIR/bin/xray 2>/dev/null || true
     
     # Create necessary directories
