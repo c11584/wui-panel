@@ -146,8 +146,8 @@ install_wui() {
             ;;
     esac
     
-    # Download all-in-one package
-    WUI_URL="https://github.com/c11584/wui/releases/download/v${WUI_VERSION}/wui-linux-${WUI_ARCH}-${WUI_VERSION}.tar.gz"
+    # Download all-in-one package (public repo: wui-panel)
+    WUI_URL="https://github.com/c11584/wui-panel/releases/download/v${WUI_VERSION}/wui-${WUI_VERSION}-linux-${WUI_ARCH}.tar.gz"
     TMP_DIR="/tmp/wui-$$"
     
     mkdir -p $TMP_DIR
