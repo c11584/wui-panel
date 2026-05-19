@@ -14,8 +14,7 @@ curl -fsSL https://raw.githubusercontent.com/c11584/wui-panel/main/install.sh | 
 curl -fsSL https://raw.githubusercontent.com/c11584/wui-panel/main/install.sh | bash -s -- \
   --port 8080 \
   --username admin \
-  --password yourpassword \
-  --install-dir /opt/wui
+  --password yourpassword
 ```
 
 ### 参数说明
@@ -25,7 +24,9 @@ curl -fsSL https://raw.githubusercontent.com/c11584/wui-panel/main/install.sh | 
 | `--port` | 32451 | 面板端口 |
 | `--username` | admin | 管理员用户名 |
 | `--password` | 随机生成 | 管理员密码 |
-| `--install-dir` | /opt/wui | 安装目录 |
+| `--activation-code` | 无 | 激活码，安装后自动激活授权 |
+
+> 支持两种参数格式：`--key value` 和 `--key=value`（当值可能为空时推荐用 `--key=value`）
 
 ## 管理命令
 
