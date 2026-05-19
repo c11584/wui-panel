@@ -96,8 +96,8 @@ detect_os() {
         OS=$(lsb_release -si | tr '[:upper:]' '[:lower:]')
         VER=$(lsb_release -sr)
     else
-        echo -e "${RED}Cannot detect OS${NC}"
-        exit 1
+        OS="unknown"
+        VER="unknown"
     fi
     echo -e "${GREEN}Detected OS: $OS $VER${NC}"
 }
@@ -106,25 +106,24 @@ detect_os() {
 install_dependencies() {
     echo -e "${YELLOW}Installing dependencies...${NC}"
     
-    case $OS in
-        ubuntu|debian)
-            apt-get update -y
-            apt-get install -y curl wget unzip
-            ;;
-        centos|rhel|rocky|almalinux)
-            yum install -y curl wget unzip
-            ;;
-        fedora)
-            dnf install -y curl wget unzip
-            ;;
-        arch|manjaro)
-            pacman -Sy --noconfirm curl wget unzip
-            ;;
-        *)
-            echo -e "${RED}Unsupported OS: $OS${NC}"
-            exit 1
-            ;;
-    esac
+    # Try package manager directly — more reliable than OS ID matching
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update -y
+        apt-get install -y curl wget unzip
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y curl wget unzip
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y curl wget unzip
+    elif command -v zypper >/dev/null 2>&1; then
+        zypper -n install curl wget unzip
+    elif command -v pacman >/dev/null 2>&1; then
+        pacman -Sy --noconfirm curl wget unzip
+    elif command -v apk >/dev/null 2>&1; then
+        apk add --no-cache curl wget unzip
+    else
+        echo -e "${RED}No supported package manager found (apt/yum/dnf/zypper/pacman/apk)${NC}"
+        exit 1
+    fi
     
     echo -e "${GREEN}Dependencies installed${NC}"
 }
