@@ -530,24 +530,6 @@ start_service() {
     fi
 }
 
-# Initialize admin license
-init_admin_license() {
-    echo -e "${YELLOW}Initializing admin license...${NC}"
-    
-    cd $INSTALL_DIR
-    set +e
-    ./wui-server --init-admin-license 2>&1 | tee /tmp/wui-admin-license.txt
-    local LICENSE_EXIT=${PIPESTATUS[0]}
-    set -e
-    
-    if [[ $LICENSE_EXIT -eq 0 ]]; then
-        echo -e "${GREEN}Admin license initialized${NC}"
-        echo -e "${YELLOW}Admin License Key has been saved to /tmp/wui-admin-license.txt${NC}"
-    else
-        echo -e "${YELLOW}Admin license initialization skipped (may already exist)${NC}"
-    fi
-}
-
 # Show success message
 show_success() {
     SERVER_IP=$(curl -s ifconfig.me || echo "YOUR_SERVER_IP")
@@ -565,9 +547,7 @@ show_success() {
     echo ""
     echo -e "${YELLOW}Important:${NC}"
     echo "  - The panel runs in AGENT mode by default"
-    echo "  - An admin license has been generated for you"
-    echo "  - Check /tmp/wui-admin-license.txt for your license key"
-    echo "  - Go to Settings > License to activate"
+    echo "  - Configure license-server URL in Settings > License"
     echo ""
     echo -e "${YELLOW}Commands:${NC}"
     echo "  wui start       Start WUI"
@@ -617,7 +597,6 @@ main() {
     setup_cli
     setup_firewall
     start_service
-    init_admin_license
     show_success
 }
 
