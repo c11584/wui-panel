@@ -252,7 +252,7 @@ download_xray() {
     TMP_XRAY="/tmp/xray-$$"
     mkdir -p $TMP_XRAY
     
-    if wget -O $TMP_XRAY/xray.zip $XRAY_URL 2>/dev/null; then
+    if wget --timeout=30 --tries=3 -O $TMP_XRAY/xray.zip $XRAY_URL 2>/dev/null; then
         unzip -o $TMP_XRAY/xray.zip -d $TMP_XRAY
         mv $TMP_XRAY/xray $INSTALL_DIR/bin/xray
         chmod +x $INSTALL_DIR/bin/xray
@@ -460,7 +460,7 @@ case "$1" in
             rm -f /etc/systemd/system/wui.service
             systemctl daemon-reload
             # Remove firewall rules — read port from config if available
-            PORT=$(python3 -c "import json; print(json.load(open('${WUI_DIR}/config.json')).get('panel',{}).get('port',32451))" 2>/dev/null || echo "32451")
+            PORT=$(grep -o '"port":[[:space:]]*[0-9]*' "${WUI_DIR}/config.json" 2>/dev/null | grep -o '[0-9]*$' || echo "32451")
             if command -v ufw >/dev/null 2>&1; then
                 ufw delete allow ${PORT}/tcp 2>/dev/null || true
             elif command -v firewall-cmd >/dev/null 2>&1; then
@@ -535,9 +535,12 @@ init_admin_license() {
     echo -e "${YELLOW}Initializing admin license...${NC}"
     
     cd $INSTALL_DIR
+    set +e
     ./wui-server --init-admin-license 2>&1 | tee /tmp/wui-admin-license.txt
+    local LICENSE_EXIT=${PIPESTATUS[0]}
+    set -e
     
-    if [[ $? -eq 0 ]]; then
+    if [[ $LICENSE_EXIT -eq 0 ]]; then
         echo -e "${GREEN}Admin license initialized${NC}"
         echo -e "${YELLOW}Admin License Key has been saved to /tmp/wui-admin-license.txt${NC}"
     else
