@@ -27,22 +27,22 @@ fi
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --port)
-            PANEL_PORT="$2"
-            shift 2
-            ;;
-        --username)
-            PANEL_USER="$2"
-            shift 2
-            ;;
-        --password)
-            PANEL_PASS="$2"
-            shift 2
-            ;;
-        --activation-code)
-            ACTIVATION_CODE="$2"
-            shift 2
-            ;;
+        --port=*|--port)
+            PANEL_PORT="${1#--port=}"
+            [ "$1" = "--port" ] && { PANEL_PORT="$2"; shift; }
+            shift ;;
+        --username=*|--username)
+            PANEL_USER="${1#--username=}"
+            [ "$1" = "--username" ] && { PANEL_USER="$2"; shift; }
+            shift ;;
+        --password=*|--password)
+            PANEL_PASS="${1#--password=}"
+            [ "$1" = "--password" ] && { PANEL_PASS="$2"; shift; }
+            shift ;;
+        --activation-code=*|--activation-code)
+            ACTIVATION_CODE="${1#--activation-code=}"
+            [ "$1" = "--activation-code" ] && { ACTIVATION_CODE="$2"; shift; }
+            shift ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
