@@ -536,23 +536,23 @@ activate_with_code() {
     
     # Read machine_id from config
     local MACHINE_ID=""
-    if [[ -f "$INSTALL_DIR/data/config.json" ]]; then
-        MACHINE_ID=$(grep -o '"machineId"[[:space:]]*:[[:space:]]*"[^"]*"' "$INSTALL_DIR/data/config.json" 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"' | head -1)
+    if [[ -f "$INSTALL_DIR/config.json" ]]; then
+        MACHINE_ID=$(grep -o '"machineId"[[:space:]]*:[[:space:]]*"[^"]*"' "$INSTALL_DIR/config.json" 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"' | head -1)
     fi
     if [[ -z "$MACHINE_ID" ]]; then
         MACHINE_ID=$(cat /proc/machineid 2>/dev/null || cat /etc/machine-id 2>/dev/null || hostname)
     fi
     
-    # Determine license server URL from config
+    # Determine license server URL
     local LICENSE_SERVER=""
-    if [[ -f "$INSTALL_DIR/data/config.json" ]]; then
-        LICENSE_SERVER=$(grep -o '"licenseServerUrl"[[:space:]]*:[[:space:]]*"[^"]*"' "$INSTALL_DIR/data/config.json" 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"' | head -1)
+    if [[ -f "$INSTALL_DIR/config.json" ]]; then
+        LICENSE_SERVER=$(grep -o '"licenseServerUrl"[[:space:]]*:[[:space:]]*"[^"]*"' "$INSTALL_DIR/config.json" 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"' | head -1)
     fi
     if [[ -z "$LICENSE_SERVER" ]]; then
         LICENSE_SERVER="https://wui-licenses.tlpyun.com"
     fi
     
-    # Call activate API
+    # Step 1: Call license-server activate API to get licenseKey
     local RESP
     RESP=$(curl -s --connect-timeout 10 --max-time 30 \
         -X POST \
@@ -573,30 +573,68 @@ activate_with_code() {
         return 0
     fi
     
-    # Extract license key from response
+    # Extract license key and plan name from response
     local LICENSE_KEY=$(echo "$RESP" | grep -o '"licenseKey"[[:space:]]*:[[:space:]]*"[^"]*"' 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"' | head -1)
     local PLAN_NAME=$(echo "$RESP" | grep -o '"planName"[[:space:]]*:[[:space:]]*"[^"]*"' 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"')
     
-    if [[ -n "$LICENSE_KEY" ]] && [[ -f "$INSTALL_DIR/data/config.json" ]]; then
-        # Write license key into config.json
+    if [[ -z "$LICENSE_KEY" ]]; then
+        echo -e "${YELLOW}Warning: No license key returned. Please activate manually in panel settings.${NC}"
+        return 0
+    fi
+    
+    echo "  License key obtained: $LICENSE_KEY ($PLAN_NAME)"
+    
+    # Step 2: Login to panel to get auth token (with retry)
+    local PANEL_URL="http://127.0.0.1:$PANEL_PORT"
+    local TOKEN=""
+    local RETRY=0
+    while [[ $RETRY -lt 10 ]]; do
+        local LOGIN_RESP
+        LOGIN_RESP=$(curl -s --connect-timeout 3 --max-time 5 \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"$PANEL_USER\",\"password\":\"$PANEL_PASS\"}" \
+            "$PANEL_URL/api/auth/login" 2>/dev/null)
+        TOKEN=$(echo "$LOGIN_RESP" | grep -o '"token"[[:space:]]*:[[:space:]]*"[^"]*"' 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"' | head -1)
+        if [[ -n "$TOKEN" ]]; then
+            break
+        fi
+        RETRY=$((RETRY + 1))
+        sleep 2
+    done
+    
+    if [[ -z "$TOKEN" ]]; then
+        echo -e "${YELLOW}Warning: Failed to login to panel. Writing license key to config for manual activation.${NC}"
+        # Fallback: write to config.json
         if command -v python3 >/dev/null 2>&1; then
             python3 -c "
 import json, sys
-with open('$INSTALL_DIR/data/config.json', 'r') as f:
+with open('$INSTALL_DIR/config.json', 'r') as f:
     cfg = json.load(f)
-cfg['licenseKey'] = '$LICENSE_KEY'
-with open('$INSTALL_DIR/data/config.json', 'w') as f:
+cfg.setdefault('license', {})['licenseKey'] = '$LICENSE_KEY'
+with open('$INSTALL_DIR/config.json', 'w') as f:
     json.dump(cfg, f, indent=2)
 " 2>/dev/null
-        else
-            # Fallback: use sed
-            sed -i "s/\"licenseKey\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"licenseKey\": \"$LICENSE_KEY\"/" "$INSTALL_DIR/data/config.json" 2>/dev/null
         fi
-        # Restart service to pick up new license
-        systemctl restart wui 2>/dev/null || true
+        return 0
+    fi
+    
+    # Step 3: Call panel's license activate API to import the key
+    local ACTIVATE_RESP
+    ACTIVATE_RESP=$(curl -s --connect-timeout 10 --max-time 30 \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $TOKEN" \
+        -d "{\"licenseKey\":\"$LICENSE_KEY\",\"instanceId\":\"$MACHINE_ID\",\"machineName\":\"$(hostname 2>/dev/null || echo 'server')\"}" \
+        "$PANEL_URL/api/license/activate" 2>/dev/null)
+    
+    local ACT_SUCCESS=$(echo "$ACTIVATE_RESP" | grep -o '"success"[[:space:]]*:[[:space:]]*true' 2>/dev/null)
+    if [[ -n "$ACT_SUCCESS" ]]; then
         echo -e "${GREEN}License activated: $PLAN_NAME${NC}"
     else
-        echo -e "${YELLOW}Warning: Could not save license key. Please activate manually in panel settings.${NC}"
+        local ACT_MSG=$(echo "$ACTIVATE_RESP" | grep -o '"error"[[:space:]]*:[[:space:]]*"[^"]*"' 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"')
+        echo -e "${YELLOW}Warning: Panel license import failed: ${ACT_MSG:-unknown}. License key: $LICENSE_KEY${NC}"
+        echo -e "${YELLOW}You can manually activate in panel settings using this key.${NC}"
     fi
 }
 
