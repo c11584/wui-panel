@@ -674,6 +674,7 @@ main() {
     fi
     
     show_success
+    echo -e "install success"
 }
 
 # Run main function
