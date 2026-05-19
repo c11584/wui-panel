@@ -501,10 +501,10 @@ CLI
 setup_firewall() {
     echo -e "${YELLOW}Configuring firewall...${NC}"
     
-    if command -v ufw >/dev/null 2>&1; then
+    if command -v ufw >/dev/null 2>&1 && ufw status >/dev/null 2>&1; then
         ufw allow $PANEL_PORT/tcp comment "WUI Panel"
         echo -e "${GREEN}UFW firewall configured${NC}"
-    elif command -v firewall-cmd >/dev/null 2>&1; then
+    elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
         firewall-cmd --permanent --add-port=$PANEL_PORT/tcp
         firewall-cmd --reload
         echo -e "${GREEN}Firewalld configured${NC}"
