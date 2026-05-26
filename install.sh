@@ -199,6 +199,7 @@ install_wui() {
     # 不使用 tarball 里的默认 config.json，让 create_config() 生成新的
     rm -f $INSTALL_DIR/config.json
     chmod +x $INSTALL_DIR/bin/xray 2>/dev/null || true
+    chmod +x $INSTALL_DIR/bin/sing-box 2>/dev/null || true
     
     # Create necessary directories
     mkdir -p $INSTALL_DIR/{data,logs,configs}
@@ -314,6 +315,10 @@ if 'machineId' not in c.get('panel',{}): c.setdefault('panel',{})['machineId']='
   },
   "xray": {
     "binPath": "$INSTALL_DIR/bin/xray",
+    "configPath": "$INSTALL_DIR/configs"
+  },
+  "singbox": {
+    "binPath": "$INSTALL_DIR/bin/sing-box",
     "configPath": "$INSTALL_DIR/configs"
   },
   "database": {
@@ -435,6 +440,11 @@ case "$1" in
         if [ -f "${EXTRACTED}/bin/xray" ]; then
             cp -f "${EXTRACTED}/bin/xray" "${WUI_DIR}/bin/xray"
             chmod +x "${WUI_DIR}/bin/xray"
+        fi
+        # Update sing-box if included
+        if [ -f "${EXTRACTED}/bin/sing-box" ]; then
+            cp -f "${EXTRACTED}/bin/sing-box" "${WUI_DIR}/bin/sing-box"
+            chmod +x "${WUI_DIR}/bin/sing-box"
         fi
         # Update geo data
         for f in geoip.dat geosite.dat; do
