@@ -159,16 +159,19 @@ install_wui() {
     # Try to download, fallback to local for testing
     if ! wget --timeout=30 --tries=3 -O $TMP_DIR/wui.tar.gz $WUI_URL 2>/dev/null; then
         echo -e "${YELLOW}Pre-built package not found, checking for local files...${NC}"
-        if [[ -f "./wui-linux-${WUI_ARCH}-${WUI_VERSION}.tar.gz" ]]; then
-            cp ./wui-linux-${WUI_ARCH}-${WUI_VERSION}.tar.gz $TMP_DIR/wui.tar.gz
-        elif [[ -f "./wui" && -d "./web" ]]; then
-            # Local development files
+        if [[ -f "./wui-${WUI_VERSION}-linux-${WUI_ARCH}.tar.gz" ]]; then
+            cp ./wui-${WUI_VERSION}-linux-${WUI_ARCH}.tar.gz $TMP_DIR/wui.tar.gz
+        elif [[ -f "./wui-server" && -d "./web" ]]; then
             echo -e "${YELLOW}Using local development files${NC}"
             mkdir -p $INSTALL_DIR
             cp -r ./web $INSTALL_DIR/
-            cp ./wui $INSTALL_DIR/
+            cp ./wui-server $INSTALL_DIR/wui-server
             mkdir -p $INSTALL_DIR/bin
-            chmod +x $INSTALL_DIR/wui
+            chmod +x $INSTALL_DIR/wui-server
+            if [ -f "./bin/sing-box" ]; then
+                cp ./bin/sing-box $INSTALL_DIR/bin/sing-box
+                chmod +x $INSTALL_DIR/bin/sing-box
+            fi
             mkdir -p $INSTALL_DIR/{data,logs,configs}
             rm -rf $TMP_DIR
             echo -e "${GREEN}WUI panel installed from local files${NC}"
@@ -452,6 +455,11 @@ case "$1" in
                 cp -f "${EXTRACTED}/$f" "${WUI_DIR}/$f"
             fi
         done
+        # Update web frontend
+        if [ -d "${EXTRACTED}/web" ]; then
+            rm -rf "${WUI_DIR}/web"
+            cp -rf "${EXTRACTED}/web" "${WUI_DIR}/web"
+        fi
         rm -rf "$TMPDIR"
         echo "Starting WUI service..."
         systemctl start wui
