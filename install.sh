@@ -393,6 +393,28 @@ case "$1" in
         fi ;;
     version)
         /opt/wui/wui-server -version 2>/dev/null || echo "unknown" ;;
+    info)
+        if [ ! -f "${WUI_DIR}/config.json" ]; then
+            echo "Config file not found: ${WUI_DIR}/config.json"
+            exit 1
+        fi
+        VER=$(/opt/wui/wui-server -version 2>/dev/null || echo "unknown")
+        PORT=$(grep -o '"port":[[:space:]]*[0-9]*' "${WUI_DIR}/config.json" 2>/dev/null | grep -o '[0-9]*$' || echo "32451")
+        USER=$(grep -o '"username":[[:space:]]*"[^"]*"' "${WUI_DIR}/config.json" 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"' || echo "admin")
+        PASS=$(grep -o '"password":[[:space:]]*"[^"]*"' "${WUI_DIR}/config.json" 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"' || echo "-")
+        IP=$(curl -s --max-time 3 ifconfig.me 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
+        STATUS=$(systemctl is-active wui 2>/dev/null || echo "unknown")
+        echo -e "\033[36m========================================\033[0m"
+        echo -e "\033[36m  WUI Panel Info\033[0m"
+        echo -e "\033[36m========================================\033[0m"
+        echo ""
+        echo -e "  Version:    \033[33mv${VER}\033[0m"
+        echo -e "  Status:     ${STATUS}"
+        echo -e "  Panel URL:  \033[32mhttp://${IP}:${PORT}\033[0m"
+        echo -e "  Username:   \033[33m${USER}\033[0m"
+        echo -e "  Password:   \033[33m${PASS}\033[0m"
+        echo ""
+        ;;
     update)
         echo "Checking for updates..."
         CURRENT=$(/opt/wui/wui-server -version 2>/dev/null || echo "unknown")
@@ -502,6 +524,7 @@ case "$1" in
         echo "  stop        Stop WUI"
         echo "  restart     Restart WUI"
         echo "  status      Show service status"
+        echo "  info        Show panel info (URL, username, password)"
         echo "  log [-f]    Show logs (add -f to follow)"
         echo "  version     Show version"
         echo "  update      Update to latest version"
@@ -680,13 +703,14 @@ show_success() {
     echo "  wui stop        Stop WUI"
     echo "  wui restart     Restart WUI"
     echo "  wui status      Show service status"
+    echo "  wui info        Show panel info (URL, username, password)"
     echo "  wui log [-f]    Show logs (add -f to follow)"
     echo "  wui version     Show version"
     echo "  wui update      Update to latest version"
     echo "  wui uninstall   Uninstall WUI"
     echo ""
     echo -e "${RED}IMPORTANT: A random password has been generated. Please save it now!${NC}"
-    echo -e "${RED}           Run 'echo $PANEL_PASS' to view it again.${NC}"
+    echo -e "${RED}           Run 'wui info' to view panel details anytime.${NC}"
     echo ""
 }
 
