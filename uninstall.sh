@@ -43,6 +43,5 @@ rm -rf $INSTALL_DIR
 
 echo "Removing CLI command..."
 rm -f /usr/local/bin/wui
-rm -f /tmp/wui-admin-license.txt
 
 echo -e "${GREEN}WUI has been uninstalled successfully.${NC}"

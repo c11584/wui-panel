@@ -39,10 +39,6 @@ while [[ $# -gt 0 ]]; do
             PANEL_PASS="${1#--password=}"
             [ "$1" = "--password" ] && { PANEL_PASS="$2"; shift; }
             shift ;;
-        --activation-code=*|--activation-code)
-            ACTIVATION_CODE="${1#--activation-code=}"
-            [ "$1" = "--activation-code" ] && { ACTIVATION_CODE="$2"; shift; }
-            shift ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -50,7 +46,6 @@ while [[ $# -gt 0 ]]; do
             echo "  --port PORT                Panel port (default: 32451)"
             echo "  --username USER            Admin username (default: admin)"
             echo "  --password PASS            Admin password (default: random)"
-            echo "  --activation-code CODE     Auto-activate with activation code"
             echo "  --help                     Show this help message"
             exit 0
             ;;
@@ -330,10 +325,6 @@ if 'machineId' not in c.get('panel',{}): c.setdefault('panel',{})['machineId']='
   "logs": {
     "path": "$INSTALL_DIR/logs",
     "level": "info"
-  },
-  "license": {
-    "serverUrl": "",
-    "gracePeriodDays": 7
   }
 }
 CONFIG
@@ -509,7 +500,6 @@ case "$1" in
             echo "Removing installation directory..."
             rm -rf "${WUI_DIR}"
             rm -f /usr/local/bin/wui
-            rm -f /tmp/wui-admin-license.txt
             echo -e "\033[32mWUI has been uninstalled.\033[0m"
         else
             echo "Cancelled."
@@ -570,114 +560,6 @@ start_service() {
     fi
 }
 
-# Activate with activation code
-activate_with_code() {
-    echo ""
-    echo -e "${YELLOW}Activating with activation code...${NC}"
-    
-    # Read machine_id from config
-    local MACHINE_ID=""
-    if [[ -f "$INSTALL_DIR/config.json" ]]; then
-        MACHINE_ID=$(grep -o '"machineId"[[:space:]]*:[[:space:]]*"[^"]*"' "$INSTALL_DIR/config.json" 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"' | head -1)
-    fi
-    if [[ -z "$MACHINE_ID" ]]; then
-        MACHINE_ID=$(cat /proc/machineid 2>/dev/null || cat /etc/machine-id 2>/dev/null || hostname)
-    fi
-    
-    # Determine license server URL
-    local LICENSE_SERVER=""
-    if [[ -f "$INSTALL_DIR/config.json" ]]; then
-        LICENSE_SERVER=$(grep -o '"licenseServerUrl"[[:space:]]*:[[:space:]]*"[^"]*"' "$INSTALL_DIR/config.json" 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"' | head -1)
-    fi
-    if [[ -z "$LICENSE_SERVER" ]]; then
-        LICENSE_SERVER="https://wui-licenses.tlpyun.com"
-    fi
-    
-    # Step 1: Call license-server activate API to get licenseKey
-    local RESP
-    RESP=$(curl -s --connect-timeout 10 --max-time 30 \
-        -X POST \
-        -H "Content-Type: application/json" \
-        -d "{\"activationCode\":\"$ACTIVATION_CODE\",\"machineId\":\"$MACHINE_ID\"}" \
-        "$LICENSE_SERVER/api/v1/activate" 2>/dev/null)
-    
-    if [[ $? -ne 0 ]]; then
-        echo -e "${YELLOW}Warning: Activation failed (network error). You can activate manually in panel settings.${NC}"
-        return 0
-    fi
-    
-    # Check response
-    local SUCCESS=$(echo "$RESP" | grep -o '"success"[[:space:]]*:[[:space:]]*true' 2>/dev/null)
-    if [[ -z "$SUCCESS" ]]; then
-        local MSG=$(echo "$RESP" | grep -o '"message"[[:space:]]*:[[:space:]]*"[^"]*"' 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"')
-        echo -e "${YELLOW}Warning: Activation failed: ${MSG:-unknown error}. You can activate manually in panel settings.${NC}"
-        return 0
-    fi
-    
-    # Extract license key and plan name from response
-    local LICENSE_KEY=$(echo "$RESP" | grep -o '"licenseKey"[[:space:]]*:[[:space:]]*"[^"]*"' 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"' | head -1)
-    local PLAN_NAME=$(echo "$RESP" | grep -o '"planName"[[:space:]]*:[[:space:]]*"[^"]*"' 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"')
-    
-    if [[ -z "$LICENSE_KEY" ]]; then
-        echo -e "${YELLOW}Warning: No license key returned. Please activate manually in panel settings.${NC}"
-        return 0
-    fi
-    
-    echo "  License key obtained: $LICENSE_KEY ($PLAN_NAME)"
-    
-    # Step 2: Login to panel to get auth token (with retry)
-    local PANEL_URL="http://127.0.0.1:$PANEL_PORT"
-    local TOKEN=""
-    local RETRY=0
-    while [[ $RETRY -lt 10 ]]; do
-        local LOGIN_RESP
-        LOGIN_RESP=$(curl -s --connect-timeout 3 --max-time 5 \
-            -X POST \
-            -H "Content-Type: application/json" \
-            -d "{\"username\":\"$PANEL_USER\",\"password\":\"$PANEL_PASS\"}" \
-            "$PANEL_URL/api/auth/login" 2>/dev/null)
-        TOKEN=$(echo "$LOGIN_RESP" | grep -o '"token"[[:space:]]*:[[:space:]]*"[^"]*"' 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"' | head -1)
-        if [[ -n "$TOKEN" ]]; then
-            break
-        fi
-        RETRY=$((RETRY + 1))
-        sleep 2
-    done
-    
-    if [[ -z "$TOKEN" ]]; then
-        echo -e "${YELLOW}Warning: Failed to login to panel. Writing license key to config for manual activation.${NC}"
-        # Fallback: write to config.json
-        if command -v python3 >/dev/null 2>&1; then
-            python3 -c "
-import json, sys
-with open('$INSTALL_DIR/config.json', 'r') as f:
-    cfg = json.load(f)
-cfg.setdefault('license', {})['licenseKey'] = '$LICENSE_KEY'
-with open('$INSTALL_DIR/config.json', 'w') as f:
-    json.dump(cfg, f, indent=2)
-" 2>/dev/null
-        fi
-        return 0
-    fi
-    
-    # Step 3: Call panel's license activate API to import the key
-    local ACTIVATE_RESP
-    ACTIVATE_RESP=$(curl -s --connect-timeout 10 --max-time 30 \
-        -X POST \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer $TOKEN" \
-        -d "{\"licenseKey\":\"$LICENSE_KEY\",\"instanceId\":\"$MACHINE_ID\",\"machineName\":\"$(hostname 2>/dev/null || echo 'server')\"}" \
-        "$PANEL_URL/api/license/activate" 2>/dev/null)
-    
-    local ACT_SUCCESS=$(echo "$ACTIVATE_RESP" | grep -o '"success"[[:space:]]*:[[:space:]]*true' 2>/dev/null)
-    if [[ -n "$ACT_SUCCESS" ]]; then
-        echo -e "${GREEN}License activated: $PLAN_NAME${NC}"
-    else
-        local ACT_MSG=$(echo "$ACTIVATE_RESP" | grep -o '"error"[[:space:]]*:[[:space:]]*"[^"]*"' 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"')
-        echo -e "${YELLOW}Warning: Panel license import failed: ${ACT_MSG:-unknown}. License key: $LICENSE_KEY${NC}"
-        echo -e "${YELLOW}You can manually activate in panel settings using this key.${NC}"
-    fi
-}
 
 # Show success message
 show_success() {
@@ -695,8 +577,6 @@ show_success() {
     echo -e "${YELLOW}Installation Directory:${NC} $INSTALL_DIR"
     echo ""
     echo -e "${YELLOW}Important:${NC}"
-    echo "  - The panel runs in AGENT mode by default"
-    echo "  - Configure license-server URL in Settings > License"
     echo ""
     echo -e "${YELLOW}Commands:${NC}"
     echo "  wui start       Start WUI"
@@ -748,10 +628,6 @@ main() {
     setup_firewall
     start_service
     
-    # Auto-activate with activation code if provided
-    if [[ -n "$ACTIVATION_CODE" ]]; then
-        activate_with_code
-    fi
     
     show_success
     echo -e "install success"
